@@ -147,32 +147,34 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Cache miss -> Query Supabase
-	if !cacheValid {
-		err := db.QueryRow("SELECT chat_id, user_key, COALESCE(max_alerts, 100) FROM user_map WHERE uid = $1", uid).Scan(&chatID, &userKey, &maxAlerts)
-		if err == sql.ErrNoRows {
-			fmt.Fprint(w, "UID_NOT_LINKED")
-			return
-		} else if err != nil {
-			log.Printf("DB Error: %v", err)
-			fmt.Fprint(w, "OK")
-			return
-		}
+	// Cache miss -> Query Supabase
+if !cacheValid {
+    var userKey string
+    err := db.QueryRow("SELECT chat_id, user_key, COALESCE(max_alerts, 100) FROM user_map WHERE uid = $1", uid).Scan(&chatID, &userKey, &maxAlerts)
+    if err == sql.ErrNoRows {
+        fmt.Fprint(w, "UID_NOT_LINKED")
+        return
+    } else if err != nil {
+        log.Printf("DB Error: %v", err)
+        fmt.Fprint(w, "OK")
+        return
+    }
 
-		if userKey != key {
-			fmt.Fprint(w, "FORBIDDEN")
-			return
-		}
+    if userKey != key {
+        fmt.Fprint(w, "FORBIDDEN")
+        return
+    }
 
-		// Save to local cache for the next 5 minutes
-		userCacheMutex.Lock()
-		userCache[uid] = UserCacheEntry{
-			ChatID:     chatID,
-			UserKey:    userKey,
-			MaxAlerts:  maxAlerts,
-			Expiration: time.Now().Add(5 * time.Minute),
-		}
-		userCacheMutex.Unlock()
-	}
+    // Save to local cache for the next 5 minutes
+    userCacheMutex.Lock()
+    userCache[uid] = UserCacheEntry{
+        ChatID:     chatID,
+        UserKey:    userKey,
+        MaxAlerts:  maxAlerts,
+        Expiration: time.Now().Add(5 * time.Minute),
+    }
+    userCacheMutex.Unlock()
+}
 
 	// Process daily limits and increments atomically
 	todayStr := time.Now().Format("2006-01-02")
