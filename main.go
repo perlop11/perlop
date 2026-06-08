@@ -197,6 +197,7 @@ if !cacheValid {
 // 2) Live Core Telegram Router Endpoint
 // 2) Live Core Telegram Router Endpoint
 // 2) Live Core Telegram Router Endpoint
+// 2) Live Core Telegram Router Endpoint
 func handleTelegram(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, "OK") // Instantly acknowledge Telegram to stop retry lags
@@ -228,6 +229,12 @@ func handleTelegram(w http.ResponseWriter, r *http.Request) {
 
 	isAdmin := (chatIdStr == adminChatID)
 
+	// Determine the base routing domain cleanly
+	base := publicURL
+	if base == "" {
+		base = "https://perlop-production.up.railway.app"
+	}
+
 	// --- COMMAND HANDLERS ---
 
 	// 1. /start Command
@@ -242,10 +249,6 @@ func handleTelegram(w http.ResponseWriter, r *http.Request) {
 			_, _ = db.Exec("INSERT INTO user_map(uid, chat_id, user_key, updated_at) VALUES($1,$2,$3,$4)",
 				newUid, chatIdStr, newKey, time.Now().Unix())
 			
-			base := publicURL
-			if base == "" {
-				base = "https://perlop-production.up.railway.app"
-			}
 			webhook := fmt.Sprintf("%s/chartink?uid=%s&key=%s", base, newUid, newKey)
 			go sendTelegram(chatIdStr, fmt.Sprintf("✅ *Linked Successfully!*\n\n*Webhook URL:* `%s` \n\nPaste this URL in chartink/Tradingview, in the webhook field while setting alert\n\n/stats - Usage\n/more - Actions", webhook))
 		}
@@ -262,16 +265,46 @@ func handleTelegram(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		
-		base := publicURL
-		if base == "" {
-			base = "https://perlop-production.up.railway.app"
-		}
 		webhook := fmt.Sprintf("%s/chartink?uid=%s&key=%s", base, uid, userKey)
 		go sendTelegram(chatIdStr, fmt.Sprintf("✅ *Your Webhook URL:*\n\n`%s` \n\n/stats - Usage\n/more - Actions", webhook))
 		return
 	}
 
-	// 3. /stats Command
+	// 3. /unlink Command
+	if strings.HasPrefix(text, "/unlink") {
+		if !strings.Contains(text, "confirm") {
+			go sendTelegram(chatIdStr, "⚠️ Send `/unlink confirm` to delete your link.")
+			return
+		}
+		_, err := db.Exec("DELETE FROM user_map WHERE chat_id = $1", chatIdStr)
+		if err != nil {
+			log.Printf("Unlink query failure: %v", err)
+		}
+		go sendTelegram(chatIdStr, "❌ Unlinked.")
+		return
+	}
+
+	// 4. /newuid Command
+	if strings.HasPrefix(text, "/newuid") {
+		if !strings.Contains(text, "confirm") {
+			go sendTelegram(chatIdStr, "⚠️ Send `/newuid confirm` to rotate URL.")
+			return
+		}
+		// Clear out old connection first
+		_, _ = db.Exec("DELETE FROM user_map WHERE chat_id = $1", chatIdStr)
+		
+		// Map a fresh set of key credentials
+		newUid := fmt.Sprintf("u%d", time.Now().UnixNano()%10000000)
+		newKey := fmt.Sprintf("k%d", time.Now().UnixNano())
+		_, _ = db.Exec("INSERT INTO user_map(uid, chat_id, user_key, updated_at) VALUES($1,$2,$3,$4)",
+			newUid, chatIdStr, newKey, time.Now().Unix())
+		
+		webhook := fmt.Sprintf("%s/chartink?uid=%s&key=%s", base, newUid, newKey)
+		go sendTelegram(chatIdStr, fmt.Sprintf("🔄 *URL Rotated Successfully!*\n\n*New Webhook URL:* `%s` \n\n/stats - Usage\n/more - Actions", webhook))
+		return
+	}
+
+	// 5. /stats Command
 	if strings.HasPrefix(text, "/stats") {
 		todayStr := time.Now().Format("2006-01-02")
 		var alertsCount int
@@ -284,7 +317,7 @@ func handleTelegram(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. /more Command
+	// 6. /more Command
 	if strings.HasPrefix(text, "/more") {
 		go sendTelegram(chatIdStr, "⚙️ *Other Actions*\n\n/newuid - Rotate URL\n/unlink - Delete account")
 		return
@@ -305,7 +338,6 @@ func handleTelegram(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-
 func sendTelegram(chatID, text string) {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
 	payload, _ := json.Marshal(map[string]interface{}{
