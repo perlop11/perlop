@@ -195,6 +195,7 @@ if !cacheValid {
 }
 
 // 2) Live Core Telegram Router Endpoint
+// 2) Live Core Telegram Router Endpoint
 func handleTelegram(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, "OK") // Instantly acknowledge Telegram to stop retry lags
@@ -224,20 +225,45 @@ func handleTelegram(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _ = db.Exec("INSERT INTO telegram_updates (update_id) VALUES ($1) ON CONFLICT DO NOTHING", update.UpdateID)
 
-	// Simple Command Handler Layout
+	// Command Handler Layout
 	if strings.HasPrefix(text, "/start") {
 		var uid string
 		err := db.QueryRow("SELECT uid FROM user_map WHERE chat_id = $1", chatIdStr).Scan(&uid)
 		if err == nil {
 			go sendTelegram(chatIdStr, fmt.Sprintf("Linked Successfully : %s\nUse /myuid for Webhook URL.", uid))
 		} else {
-			// Generate fresh UIDs (Simplified random layout)
+			// Generate fresh standard UIDs for new sign-ups
 			newUid := fmt.Sprintf("u%d", time.Now().UnixNano()%10000000)
 			newKey := fmt.Sprintf("k%d", time.Now().UnixNano())
 			_, _ = db.Exec("INSERT INTO user_map(uid, chat_id, user_key, updated_at) VALUES($1,$2,$3,$4)",
 				newUid, chatIdStr, newKey, time.Now().Unix())
-			go sendTelegram(chatIdStr, fmt.Sprintf("✅ *Linked Successfully!*\n\n*Webhook URL:* `%s/chartink?uid=%s&key=%s`", publicURL, newUid, newKey))
+			
+			base := publicURL
+			if base == "" {
+				base = "https://perlop-production.up.railway.app"
+			}
+			webhook := fmt.Sprintf("%s/chartink?uid=%s&key=%s", base, newUid, newKey)
+			go sendTelegram(chatIdStr, fmt.Sprintf("✅ *Linked Successfully!*\n\n*Webhook URL:* `%s` \n\nPaste this URL in chartink/Tradingview , in the webhook field while setting alert\n\n/stats - Usage\n/more - Actions", webhook))
 		}
+		return
+	}
+
+	if strings.HasPrefix(text, "/myuid") {
+		var uid string
+		var userKey string
+		err := db.QueryRow("SELECT uid, user_key FROM user_map WHERE chat_id = $1", chatIdStr).Scan(&uid, &userKey)
+		if err != nil {
+			go sendTelegram(chatIdStr, "⚠️ Account not found. Type /start to generate your link.")
+			return
+		}
+		
+		base := publicURL
+		if base == "" {
+			base = "https://perlop-production.up.railway.app"
+		}
+		webhook := fmt.Sprintf("%s/chartink?uid=%s&key=%s", base, uid, userKey)
+		go sendTelegram(chatIdStr, fmt.Sprintf("✅ *Your Webhook URL:*\n\n`%s` \n\n/stats - Usage\n/more - Actions", webhook))
+		return
 	}
 }
 
