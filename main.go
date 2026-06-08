@@ -196,6 +196,7 @@ if !cacheValid {
 
 // 2) Live Core Telegram Router Endpoint
 // 2) Live Core Telegram Router Endpoint
+// 2) Live Core Telegram Router Endpoint
 func handleTelegram(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, "OK") // Instantly acknowledge Telegram to stop retry lags
@@ -225,14 +226,17 @@ func handleTelegram(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _ = db.Exec("INSERT INTO telegram_updates (update_id) VALUES ($1) ON CONFLICT DO NOTHING", update.UpdateID)
 
-	// Command Handler Layout
+	isAdmin := (chatIdStr == adminChatID)
+
+	// --- COMMAND HANDLERS ---
+
+	// 1. /start Command
 	if strings.HasPrefix(text, "/start") {
 		var uid string
 		err := db.QueryRow("SELECT uid FROM user_map WHERE chat_id = $1", chatIdStr).Scan(&uid)
 		if err == nil {
 			go sendTelegram(chatIdStr, fmt.Sprintf("Linked Successfully : %s\nUse /myuid for Webhook URL.", uid))
 		} else {
-			// Generate fresh standard UIDs for new sign-ups
 			newUid := fmt.Sprintf("u%d", time.Now().UnixNano()%10000000)
 			newKey := fmt.Sprintf("k%d", time.Now().UnixNano())
 			_, _ = db.Exec("INSERT INTO user_map(uid, chat_id, user_key, updated_at) VALUES($1,$2,$3,$4)",
@@ -243,11 +247,12 @@ func handleTelegram(w http.ResponseWriter, r *http.Request) {
 				base = "https://perlop-production.up.railway.app"
 			}
 			webhook := fmt.Sprintf("%s/chartink?uid=%s&key=%s", base, newUid, newKey)
-			go sendTelegram(chatIdStr, fmt.Sprintf("✅ *Linked Successfully!*\n\n*Webhook URL:* `%s` \n\nPaste this URL in chartink/Tradingview , in the webhook field while setting alert\n\n/stats - Usage\n/more - Actions", webhook))
+			go sendTelegram(chatIdStr, fmt.Sprintf("✅ *Linked Successfully!*\n\n*Webhook URL:* `%s` \n\nPaste this URL in chartink/Tradingview, in the webhook field while setting alert\n\n/stats - Usage\n/more - Actions", webhook))
 		}
 		return
 	}
 
+	// 2. /myuid Command
 	if strings.HasPrefix(text, "/myuid") {
 		var uid string
 		var userKey string
@@ -264,6 +269,40 @@ func handleTelegram(w http.ResponseWriter, r *http.Request) {
 		webhook := fmt.Sprintf("%s/chartink?uid=%s&key=%s", base, uid, userKey)
 		go sendTelegram(chatIdStr, fmt.Sprintf("✅ *Your Webhook URL:*\n\n`%s` \n\n/stats - Usage\n/more - Actions", webhook))
 		return
+	}
+
+	// 3. /stats Command
+	if strings.HasPrefix(text, "/stats") {
+		todayStr := time.Now().Format("2006-01-02")
+		var alertsCount int
+		_ = db.QueryRow("SELECT alerts_count FROM daily_usage WHERE chat_id = $1 AND day = $2", chatIdStr, todayStr).Scan(&alertsCount)
+		
+		var maxAlerts int = 100
+		_ = db.QueryRow("SELECT COALESCE(max_alerts, 100) FROM user_map WHERE chat_id = $1", chatIdStr).Scan(&maxAlerts)
+
+		go sendTelegram(chatIdStr, fmt.Sprintf("📊 *Daily Usage*\nUsed: %d / %d", alertsCount, maxAlerts))
+		return
+	}
+
+	// 4. /more Command
+	if strings.HasPrefix(text, "/more") {
+		go sendTelegram(chatIdStr, "⚙️ *Other Actions*\n\n/newuid - Rotate URL\n/unlink - Delete account")
+		return
+	}
+
+	// --- ADMIN COMMANDS ---
+	if isAdmin {
+		if strings.HasPrefix(text, "/adminstats") {
+			var totalUsers int
+			var todayAlerts int
+			todayStr := time.Now().Format("2006-01-02")
+			
+			_ = db.QueryRow("SELECT COUNT(*) FROM user_map").Scan(&totalUsers)
+			_ = db.QueryRow("SELECT COALESCE(SUM(alerts_count), 0) FROM daily_usage WHERE day = $1", todayStr).Scan(&todayAlerts)
+			
+			go sendTelegram(chatIdStr, fmt.Sprintf("📊 *Admin Stats*\n\nTotal Users: %d\nAlerts Today: %d", totalUsers, todayAlerts))
+			return
+		}
 	}
 }
 
