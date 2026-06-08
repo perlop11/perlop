@@ -198,6 +198,7 @@ if !cacheValid {
 // 2) Live Core Telegram Router Endpoint
 // 2) Live Core Telegram Router Endpoint
 // 2) Live Core Telegram Router Endpoint
+// 2) Live Core Telegram Router Endpoint
 func handleTelegram(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, "OK") // Instantly acknowledge Telegram to stop retry lags
@@ -276,10 +277,7 @@ func handleTelegram(w http.ResponseWriter, r *http.Request) {
 			go sendTelegram(chatIdStr, "⚠️ Send `/unlink confirm` to delete your link.")
 			return
 		}
-		_, err := db.Exec("DELETE FROM user_map WHERE chat_id = $1", chatIdStr)
-		if err != nil {
-			log.Printf("Unlink query failure: %v", err)
-		}
+		_, _ = db.Exec("DELETE FROM user_map WHERE chat_id = $1", chatIdStr)
 		go sendTelegram(chatIdStr, "❌ Unlinked.")
 		return
 	}
@@ -290,10 +288,8 @@ func handleTelegram(w http.ResponseWriter, r *http.Request) {
 			go sendTelegram(chatIdStr, "⚠️ Send `/newuid confirm` to rotate URL.")
 			return
 		}
-		// Clear out old connection first
 		_, _ = db.Exec("DELETE FROM user_map WHERE chat_id = $1", chatIdStr)
 		
-		// Map a fresh set of key credentials
 		newUid := fmt.Sprintf("u%d", time.Now().UnixNano()%10000000)
 		newKey := fmt.Sprintf("k%d", time.Now().UnixNano())
 		_, _ = db.Exec("INSERT INTO user_map(uid, chat_id, user_key, updated_at) VALUES($1,$2,$3,$4)",
