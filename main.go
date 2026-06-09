@@ -155,17 +155,40 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	uid := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("uid")))
-	key := strings.TrimSpace(r.URL.Query().Get("key"))
-
+	// Read full body first before anything else
 	bodyBytes, _ := io.ReadAll(r.Body)
 	bodyStr := string(bodyBytes)
 
+	// Restore body for form parsing
+	r.Body = io.NopCloser(strings.NewReader(bodyStr))
+	r.ParseForm()
+
+	contentType := r.Header.Get("Content-Type")
+
+	// Try query params first (TradingView style)
+	uid := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("uid")))
+	key := strings.TrimSpace(r.URL.Query().Get("key"))
+
+	// Fallback: form body fields (Chartink sends uid/key inside POST body)
 	if uid == "" {
-		uid = strings.TrimSpace(strings.ToLower(r.PostFormValue("uid")))
+		uid = strings.TrimSpace(strings.ToLower(r.FormValue("uid")))
 	}
 	if key == "" {
-		key = strings.TrimSpace(r.PostFormValue("key"))
+		key = strings.TrimSpace(r.FormValue("key"))
+	}
+
+	// Fallback: JSON body (some integrations send everything as JSON)
+	if uid == "" && strings.Contains(contentType, "application/json") {
+		uid = strings.TrimSpace(strings.ToLower(extractValue(bodyStr, "uid")))
+		key = strings.TrimSpace(extractValue(bodyStr, "key"))
+	}
+
+	// Fallback: raw text body manual extraction
+	if uid == "" {
+		uid = strings.TrimSpace(strings.ToLower(extractValue(bodyStr, "uid")))
+	}
+	if key == "" {
+		key = strings.TrimSpace(extractValue(bodyStr, "key"))
 	}
 
 	if uid == "" {
