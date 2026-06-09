@@ -455,17 +455,36 @@ func buildMessage(body string) string {
 					symbol = fmt.Sprintf("%v", v)
 				}
 			}
-			price := ""
-			if v, ok := raw["trigger_price"]; ok {
-				price = fmt.Sprintf("%v", v)
-			}
-			if symbol != "" {
-				if price != "" {
-					stockData = symbol + " @ " + price
-				} else {
-					stockData = symbol
-				}
-			}
+			// NEW - handles both trigger_prices (Chartink) and trigger_price (TradingView)
+price := ""
+if v, ok := raw["trigger_prices"]; ok {
+    price = fmt.Sprintf("%v", v)
+} else if v, ok := raw["trigger_price"]; ok {
+    price = fmt.Sprintf("%v", v)
+}
+if symbol != "" {
+    if price != "" {
+        stockData = symbol + " @ " + price
+    } else {
+        stockData = symbol
+    }
+}
+
+// Also show stocks with prices side by side if both available
+if triggeredStocks != "" && price != "" {
+    stocks := strings.Split(triggeredStocks, ",")
+    prices := strings.Split(price, ",")
+    var combined []string
+    for i, s := range stocks {
+        s = strings.TrimSpace(s)
+        if i < len(prices) {
+            combined = append(combined, s+" @ "+strings.TrimSpace(prices[i]))
+        } else {
+            combined = append(combined, s)
+        }
+    }
+    triggeredStocks = strings.Join(combined, ", ")
+}
 			for _, key := range []string{"scan_name", "alert_name", "title"} {
 				if v, ok := raw[key]; ok && fmt.Sprintf("%v", v) != "" {
 					scanName = fmt.Sprintf("%v", v)
