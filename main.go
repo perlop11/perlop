@@ -540,13 +540,13 @@ if triggeredStocks != "" && price != "" {
 		sb += fmt.Sprintf("🧠 *Scan:* %s\n", escapeMarkdown(scanName))
 	}
 	if stockData != "" {
-		sb += fmt.Sprintf("📈 *Trigger:* %s\n", escapeMarkdown(stockData))
+		sb += fmt.Sprintf("📈 *Trigger:* %s\n", stockData)
 	}
 	if triggeredStocks != "" {
-		sb += fmt.Sprintf("📋 *Full List:* %s\n", escapeMarkdown(triggeredStocks))
+		sb += fmt.Sprintf("📋 *Full List:* %s\n", triggeredStocks)
 	}
 	if timePart != "" {
-		sb += fmt.Sprintf("⏰ *Time:* %s\n", escapeMarkdown(timePart))
+		sb += fmt.Sprintf("⏰ *Time:* %s\n", timePart)
 	}
 	return strings.TrimSpace(sb)
 }
